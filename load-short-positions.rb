@@ -1,12 +1,17 @@
 =begin
   Redis DB layout for short positions data is defined as follows:
+
+  key => "Countries"
+  val => sorted set of countries.
+
+  key => "Issuers"
+  val => hashtable of issuer isin => name mapping.
   
   key => "#{COUNTRY}:PositionHolders"
-  val => sorted set of position holders for each country.
+  val => sorted set of position holders.
   
   key => "#{COUNTRY}:#{PositionHolder}:#{IssuerISIN}:Positions"
-  val => hashtable of position date, net short position pairs for each position holder for each issuer.
-  
+  val => hashtable of position date, net short position pairs.
 =end
 
 #!/usr/bin/env ruby -wKU
@@ -36,39 +41,41 @@ end
 
 # redis db connection
 $redisdb = Redis.new
-$redisdb.select 0
+$redisdb.select 1
 
 #
 # Short positions file layout:
-# POSITION HOLDER,NAME OF THE ISSUER,ISIN,NET SHORT POSITION,"DATE POSITION WAS CREATED, CHANGED OR CANCELLED"
-# Clearance capital LLP,A&J Mucklow Group,GB0006091408,0.84%,2013-02-15
-# Fox-Davies Capital Limited,African Medical Investments PLC,IM00B39HQT38,0.63%,2012-02-15
+# COUNTRY,POSITION HOLDER,NAME OF THE ISSUER,ISIN,NET SHORT POSITION,"DATE POSITION WAS CREATED, CHANGED OR CANCELLED"
+# UNITED KINGDOM,Clearance capital LLP,A&J Mucklow Group,GB0006091408,0.84%,2013-02-15
+# UNITED KINGDOM,Fox-Davies Capital Limited,African Medical Investments PLC,IM00B39HQT38,0.63%,2012-02-15
 # ...
 # ...
 #
 if $infile && File.exist?($infile)
   CSV.foreach($infile, :headers => true, :encoding => 'windows-1251:utf-8') do |row|
-    # collect position holders in a sorted set - #{COUNTRY}:PositionHolders
-    holder = row[0].strip
-    if holder
-      dbkey = "UNITED KINGDOM:PositionHolders"
-      $redisdb.zadd dbkey, 0, holder
+    if row[0]
+      # collect countries in a sorted set - Countries
+      country = row[0].upcase.strip
+      $redisdb.zadd :Countries, 0, country
 
-      # collect issuers in a Issuers hashtable
-      issuer = row[1].strip
-      isin = row[2].strip
-      if issuer and isin
-        dbkey = "Issuers"
-        $redisdb.hset dbkey, isin, issuer
-      end
-      
-      # short positions
-      position = row[3].strip.chop # get rid of the %
-      date = row[4].strip
-      if position and date
-        #key => "#{COUNTRY}:#{PositionHolder}:#{IssuerISIN}:Positions"
-        dbkey = "UNITED KINGDOM:#{holder}:#{isin}:Positions"
-        $redisdb.hset dbkey, date, position
+      if row[1]
+        # collect position holders in a sorted set - #{COUNTRY}:PositionHolders
+        holder = row[1].upcase.strip
+        $redisdb.zadd "#{country}:PositionHolders", 0, holder
+
+        # collect issuers in a Issuers hashtable - isin => name
+        if row[2] and row[3]
+          issuer = row[2].upcase.strip
+          isin = row[3].strip
+          $redisdb.hset :Issuers, isin, issuer
+        end
+
+        # short positions
+        if row[4] and row[5]
+          position = row[4].strip.chop # get rid of the %
+          date = row[5].strip
+          $redisdb.hset "#{country}:#{holder}:#{isin}:Positions", date, position
+        end
       end
     end    
 	end # CSV.foreach
