@@ -53,28 +53,31 @@ $redisdb.select 1
 #
 if $infile && File.exist?($infile)
   CSV.foreach($infile, :headers => true, :encoding => 'windows-1251:utf-8') do |row|
-    if row[0]
+    country = row[0].strip
+    if country and country != ''
       # collect countries in a sorted set - Countries
-      country = row[0].upcase.strip
+      country.upcase!
       $redisdb.zadd :Countries, 0, country
 
-      if row[1]
+      holder = row[1].strip
+      if holder and holder != ''
         # collect position holders in a sorted set - #{COUNTRY}:PositionHolders
-        holder = row[1].upcase.strip
+        holder.upcase!
         $redisdb.zadd "#{country}:PositionHolders", 0, holder
 
         # collect issuers in a Issuers hashtable - isin => name
-        if row[2] and row[3]
-          issuer = row[2].upcase.strip
-          isin = row[3].strip
+        issuer = row[2].strip
+        isin = row[3].strip
+        if issuer and issuer != '' and isin and isin != ''
+          issuer.upcase!
           $redisdb.hset :Issuers, isin, issuer
         end
 
         # short positions
-        if row[4] and row[5]
-          position = row[4].strip.chop # get rid of the %
-          date = row[5].strip
-          $redisdb.hset "#{country}:#{holder}:#{isin}:Positions", date, position
+        pos = row[4].strip
+        date = row[5].strip
+        if pos and pos != '' and date and date != ''
+          $redisdb.hset "#{country}:#{holder}:#{isin}:Positions", date, pos.chop! # get rid of the %
         end
       end
     end    
